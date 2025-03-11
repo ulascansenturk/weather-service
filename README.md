@@ -40,6 +40,31 @@ make run-integration-test
 ```bash
 make run-all-tests
 ```
+ ## Running the test script with the more rigorous test cases
+```bash
+1 - chmod +x test_weather_service.sh
+
+2 - ./test_weather_service.sh
+````
+
+
+### Database Results
+
+After running the tests, the database should contain entries for each location queried:
+
+| id | location  | service_1_temperature | service_2_temperature | request_count | created_at                  |
+|----|-----------|----------------------|----------------------|---------------|----------------------------|
+| 12 | Istanbul  | 14.00                | 14.00                | 1             | 2025-03-11 17:55:11.680... |
+| 13 | London    | 7.10                 | 7.00                 | 5             | 2025-03-11 17:55:16.899... |
+| 14 | Paris     | 8.20                 | 8.00                 | 10            | 2025-03-11 17:55:17.171... |
+| 15 | New York  | 0.00                 | 17.00                | 1             | 2025-03-11 17:55:22.547... |
+| 16 | Tokyo     | 11.00                | 11.00                | 1             | 2025-03-11 17:55:23.021... |
+| 17 | Berlin    | 4.20                 | 4.00                 | 1             | 2025-03-11 17:55:23.440... |
+| 18 | Sydney    | 19.20                | 19.00                | 1             | 2025-03-11 17:55:23.943... |
+| 19 | Moscow    | 8.10                 | 8.00                 | 1             | 2025-03-11 17:55:24.461... |
+| 20 | Rome      | 14.00                | 14.00                | 2             | 2025-03-11 17:55:29.708... |
+
+Note how the `request_count` column shows the number of requests that were aggregated for each location.
 
 ## API Usage
 
@@ -75,6 +100,7 @@ Partial success response (one API failed):
   "warning": "Using only second weather API data"
 }
 ```
+
 
 ## Cleanup
 
