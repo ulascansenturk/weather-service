@@ -1,0 +1,16 @@
+# Please see the documentation for all configuration options:
+# https://docs.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "github.com/testcontainers/testcontainers-go"
+      - dependency-name: "github.com/gookit/goutil"
+    groups:
+      aws:
+        patterns:
+          - "github.com/aws/aws-sdk-go-v2*"

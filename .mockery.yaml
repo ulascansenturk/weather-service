@@ -1,0 +1,45 @@
+with-expecter: false
+packages:
+  ulascansenturk/weather-service/internal/db/weatherquery:
+    interfaces:
+      Repository:
+        config:
+          dir: internal/mocks
+          exported: true
+          outpkg: mocks
+          structname: WeatherSQLRepository
+          disable-version-string: true
+  ulascansenturk/weather-service/internal/service:
+    interfaces:
+      WeatherRequestAggregator:
+        config:
+          dir: internal/mocks
+          exported: true
+          outpkg: mocks
+          structname: weatherAggregator
+          disable-version-string: true
+      WeatherService:
+        config:
+          dir: internal/mocks
+          exported: true
+          outpkg: mocks
+          structname: weatherService
+          disable-version-string: true
+  ulascansenturk/weather-service/internal/providers:
+    interfaces:
+      WeatherAPIService:
+        config:
+          dir: internal/mocks
+          exported: true
+          outpkg: mocks
+          structname: weatherAPIService
+          disable-version-string: true
+  ulascansenturk/weather-service/internal/inmemorycache:
+    interfaces:
+      Cache:
+        config:
+          dir: internal/mocks
+          exported: true
+          outpkg: mocks
+          structname: InMemoryCache
+          disable-version-string: true
