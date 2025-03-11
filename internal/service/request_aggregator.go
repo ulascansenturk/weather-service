@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 	"ulascansenturk/weather-service/internal/db/weatherquery"
-	"ulascansenturk/weather-service/internal/inmemorycache"
 	"ulascansenturk/weather-service/internal/providers"
 )
 
@@ -17,50 +16,29 @@ type WeatherRequestAggregator interface {
 
 type weatherAggregator struct {
 	weatherAPI       providers.WeatherAPIService
-	cache            inmemorycache.Cache
 	weatherQueryRepo weatherquery.Repository
 	queues           map[string]*RequestQueue
 	queueMutex       sync.Mutex
 	maxQueueSize     int
 	maxWaitTime      time.Duration
-	cacheTTL         time.Duration
-	failedCacheTTL   time.Duration
 }
 
 func NewWeatherRequestAggregator(
 	weatherAPI providers.WeatherAPIService,
-	cache inmemorycache.Cache,
 	weatherQueryRepo weatherquery.Repository,
 	maxQueueSize int,
 	maxWaitTime time.Duration,
-	cacheTTL time.Duration,
-	failedCacheTTL time.Duration,
 ) WeatherRequestAggregator {
 	return &weatherAggregator{
 		weatherAPI:       weatherAPI,
-		cache:            cache,
 		weatherQueryRepo: weatherQueryRepo,
 		queues:           make(map[string]*RequestQueue),
 		maxQueueSize:     maxQueueSize,
 		maxWaitTime:      maxWaitTime,
-		cacheTTL:         cacheTTL,
-		failedCacheTTL:   failedCacheTTL,
 	}
 }
 
 func (w *weatherAggregator) AddRequest(ctx context.Context, location string) (<-chan WeatherResponse, error) {
-	cachedData, exists, err := w.cache.Get(location)
-	if err == nil && exists {
-		resultChan := make(chan WeatherResponse, 1)
-		resultChan <- WeatherResponse{
-			Location:    location,
-			Temperature: cachedData.Temperature,
-			Warning:     cachedData.Warning,
-		}
-		close(resultChan)
-		return resultChan, nil
-	}
-
 	responseChan := make(chan WeatherResponse, 1)
 	shouldProcess := false
 
@@ -160,17 +138,6 @@ func (w *weatherAggregator) ProcessQueue(location string) {
 			_ = w.weatherQueryRepo.LogWeatherQuery(location, service1Temp, service2Temp, len(channels))
 		}
 	}()
-
-	cacheData := &inmemorycache.WeatherCacheData{
-		Temperature: avgTemp,
-		Warning:     warningMsg,
-	}
-
-	cacheTTL := w.cacheTTL
-	if !(api1Success && api2Success) {
-		cacheTTL = w.failedCacheTTL
-	}
-	_ = w.cache.Set(location, cacheData, cacheTTL)
 
 	for _, ch := range channels {
 		ch <- WeatherResponse{

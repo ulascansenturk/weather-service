@@ -34,12 +34,3 @@ packages:
           outpkg: mocks
           structname: weatherAPIService
           disable-version-string: true
-  ulascansenturk/weather-service/internal/inmemorycache:
-    interfaces:
-      Cache:
-        config:
-          dir: internal/mocks
-          exported: true
-          outpkg: mocks
-          structname: InMemoryCache
-          disable-version-string: true

@@ -13,13 +13,11 @@ import (
 	"time"
 	"ulascansenturk/weather-service/internal/api/v1/handlers"
 	"ulascansenturk/weather-service/internal/db/weatherquery"
-	"ulascansenturk/weather-service/internal/inmemorycache"
 	"ulascansenturk/weather-service/internal/mocks"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	pgTestContainers "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -37,12 +35,11 @@ var (
 )
 
 type testSetup struct {
-	handler       *handlers.WeatherHandler
-	weatherAPI    *mocks.MockWeatherAPIService
-	repository    weatherquery.Repository
-	cacheProvider *mocks.MockCache
-	aggregator    service.WeatherRequestAggregator
-	db            *gorm.DB
+	handler    *handlers.WeatherHandler
+	weatherAPI *mocks.MockWeatherAPIService
+	repository weatherquery.Repository
+	aggregator service.WeatherRequestAggregator
+	db         *gorm.DB
 }
 
 const (
@@ -124,7 +121,6 @@ func SetupPostgres(t *testing.T) (*gorm.DB, func()) {
 
 func setupTest(t *testing.T, maxWaitTime time.Duration) *testSetup {
 	weatherAPIMock := mocks.NewMockWeatherAPIService(t)
-	cacheProviderMock := mocks.NewMockCache(t)
 
 	db, _ := SetupPostgres(t)
 
@@ -132,12 +128,9 @@ func setupTest(t *testing.T, maxWaitTime time.Duration) *testSetup {
 
 	aggregator := service.NewWeatherRequestAggregator(
 		weatherAPIMock,
-		cacheProviderMock,
 		repository,
 		10,
 		maxWaitTime,
-		30*time.Minute,
-		5*time.Minute,
 	)
 
 	weatherService := service.NewWeatherService(aggregator)
@@ -145,12 +138,11 @@ func setupTest(t *testing.T, maxWaitTime time.Duration) *testSetup {
 	handler := handlers.NewWeatherHandler(weatherService, 10*time.Second)
 
 	return &testSetup{
-		handler:       handler,
-		weatherAPI:    weatherAPIMock,
-		repository:    repository,
-		cacheProvider: cacheProviderMock,
-		aggregator:    aggregator,
-		db:            db,
+		handler:    handler,
+		weatherAPI: weatherAPIMock,
+		repository: repository,
+		aggregator: aggregator,
+		db:         db,
 	}
 }
 
@@ -164,9 +156,7 @@ func TestWeatherService(t *testing.T) {
 		ts := setupTest(t, 5*time.Second)
 		defer ts.aggregator.Shutdown()
 
-		ts.cacheProvider.On("Get", "Istanbul").Return(nil, false, nil)
 		ts.weatherAPI.On("GetWeatherData", "Istanbul").Return(25.5, 24.5, true, true, nil)
-		ts.cacheProvider.On("Set", "Istanbul", mock.Anything, 30*time.Minute).Return(nil)
 
 		startTime := time.Now()
 
@@ -218,9 +208,7 @@ func TestWeatherService(t *testing.T) {
 
 		location := "London"
 
-		ts.cacheProvider.On("Get", location).Return(nil, false, nil).Times(2)
 		ts.weatherAPI.On("GetWeatherData", location).Return(22.5, 21.5, true, true, nil).Once()
-		ts.cacheProvider.On("Set", location, mock.Anything, 30*time.Minute).Return(nil).Once()
 
 		var firstResponseTime time.Duration
 		var wg sync.WaitGroup
@@ -296,9 +284,7 @@ func TestWeatherService(t *testing.T) {
 
 		location := "Sydney"
 
-		ts.cacheProvider.On("Get", location).Return(nil, false, nil).Times(10)
 		ts.weatherAPI.On("GetWeatherData", location).Return(28.5, 27.5, true, true, nil).Once()
-		ts.cacheProvider.On("Set", location, mock.Anything, 30*time.Minute).Return(nil).Once()
 
 		var wg sync.WaitGroup
 		wg.Add(10)
@@ -352,9 +338,7 @@ func TestWeatherService(t *testing.T) {
 		ts := setupTest(t, 100*time.Millisecond)
 		defer ts.aggregator.Shutdown()
 
-		ts.cacheProvider.On("Get", "Paris").Return(nil, false, nil)
 		ts.weatherAPI.On("GetWeatherData", "Paris").Return(23.5, 22.5, true, true, nil)
-		ts.cacheProvider.On("Set", "Paris", mock.Anything, 30*time.Minute).Return(nil)
 
 		req := httptest.NewRequest("GET", "/weather?q=Paris", nil)
 		w := httptest.NewRecorder()
@@ -395,9 +379,7 @@ func TestWeatherService(t *testing.T) {
 		ts := setupTest(t, 100*time.Millisecond)
 		defer ts.aggregator.Shutdown()
 
-		ts.cacheProvider.On("Get", "Rome").Return(nil, false, nil)
 		ts.weatherAPI.On("GetWeatherData", "Rome").Return(26.5, 0.0, true, false, fmt.Errorf("API2 failed"))
-		ts.cacheProvider.On("Set", "Rome", mock.Anything, 5*time.Minute).Return(nil)
 
 		req := httptest.NewRequest("GET", "/weather?q=Rome", nil)
 		w := httptest.NewRecorder()
@@ -438,7 +420,6 @@ func TestWeatherService(t *testing.T) {
 		ts := setupTest(t, 100*time.Millisecond)
 		defer ts.aggregator.Shutdown()
 
-		ts.cacheProvider.On("Get", "Tokyo").Return(nil, false, nil)
 		ts.weatherAPI.On("GetWeatherData", "Tokyo").Return(0.0, 0.0, false, false, fmt.Errorf("both weather APIs failed"))
 
 		req := httptest.NewRequest("GET", "/weather?q=Tokyo", nil)
@@ -465,47 +446,6 @@ func TestWeatherService(t *testing.T) {
 		}
 
 		log.Info().Msg("✅ TEST PASSED: BothAPIsFail")
-	})
-
-	t.Run("CachedResponse", func(t *testing.T) {
-		log.Info().Msg("➡️ Running test: CachedResponse")
-
-		ts := setupTest(t, 5*time.Second)
-		defer ts.aggregator.Shutdown()
-
-		cachedData := &inmemorycache.WeatherCacheData{
-			Temperature: 22.5,
-			Warning:     "",
-		}
-		ts.cacheProvider.On("Get", "Berlin").Return(cachedData, true, nil)
-
-		startTime := time.Now()
-
-		req := httptest.NewRequest("GET", "/weather?q=Berlin", nil)
-		w := httptest.NewRecorder()
-
-		ts.handler.GetWeather(w, req)
-
-		elapsedTime := time.Since(startTime)
-
-		if elapsedTime >= 100*time.Millisecond {
-			log.Error().Dur("elapsed", elapsedTime).Msg("❌ TEST FAILED: Cached response took too long")
-			t.Fail()
-		} else {
-			log.Info().Dur("elapsed", elapsedTime).Msg("✅ Cached response returned immediately")
-		}
-
-		var response handlers.WeatherResponse
-		err := json.Unmarshal(w.Body.Bytes(), &response)
-		require.NoError(t, err)
-
-		assert.Equal(t, "Berlin", response.Location)
-		assert.Equal(t, 22.5, response.Temperature)
-		assert.Empty(t, response.Warning)
-
-		ts.weatherAPI.AssertNotCalled(t, "GetWeatherData")
-
-		log.Info().Msg("✅ TEST PASSED: CachedResponse")
 	})
 
 	t.Run("ErrorHandling", func(t *testing.T) {
@@ -568,9 +508,7 @@ func TestWeatherService(t *testing.T) {
 
 		location := "Barcelona"
 
-		ts.cacheProvider.On("Get", location).Return(nil, false, nil).Times(3)
 		ts.weatherAPI.On("GetWeatherData", location).Return(22.5, 21.5, true, true, nil).Once()
-		ts.cacheProvider.On("Set", location, mock.Anything, 30*time.Minute).Return(nil).Once()
 
 		var wg1 sync.WaitGroup
 		wg1.Add(3)
@@ -599,9 +537,7 @@ func TestWeatherService(t *testing.T) {
 			log.Info().Int("count", query1.RequestCount).Msg("✅ First batch count correct")
 		}
 
-		ts.cacheProvider.On("Get", location).Return(nil, false, nil).Times(5)
 		ts.weatherAPI.On("GetWeatherData", location).Return(22.5, 21.5, true, true, nil).Once()
-		ts.cacheProvider.On("Set", location, mock.Anything, 30*time.Minute).Return(nil).Once()
 
 		var wg2 sync.WaitGroup
 		wg2.Add(5)

@@ -143,30 +143,6 @@ func (s *WeatherServiceTestSuite) TestGetWeatherWithContextTimeout() {
 	s.mockAggregator.AssertExpectations(s.T())
 }
 
-func (s *WeatherServiceTestSuite) TestGetWeatherWithCachedResult() {
-	location := "Madrid"
-	cachedTemp := 30.5
-
-	cachedResponse := service.WeatherResponse{
-		Location:    location,
-		Temperature: cachedTemp,
-	}
-
-	responseChan := make(chan service.WeatherResponse, 1)
-	responseChan <- cachedResponse
-	close(responseChan)
-
-	s.mockAggregator.On("AddRequest", mock.Anything, location).
-		Return(convertToReceiveOnlyChannel(responseChan), nil)
-
-	result, err := s.service.GetWeather(s.ctx, location)
-
-	s.NoError(err)
-	s.Equal(cachedResponse, result)
-	s.Equal(cachedTemp, result.Temperature)
-	s.mockAggregator.AssertExpectations(s.T())
-}
-
 func (s *WeatherServiceTestSuite) TestGetWeatherWithPartialSuccess() {
 	location := "Sydney"
 

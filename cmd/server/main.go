@@ -15,7 +15,6 @@ import (
 	"ulascansenturk/weather-service/config"
 	"ulascansenturk/weather-service/internal/api/v1/handlers"
 	"ulascansenturk/weather-service/internal/db/weatherquery"
-	"ulascansenturk/weather-service/internal/inmemorycache"
 	"ulascansenturk/weather-service/internal/providers"
 	"ulascansenturk/weather-service/internal/service"
 )
@@ -47,18 +46,13 @@ func main() {
 
 	weatherRepo := weatherquery.NewRepository(db)
 
-	cacheProvider := inmemorycache.NewInMemoryCacheProvider(time.Duration(time.Second * 60))
-
 	weatherAPIService := providers.NewWeatherAPIService(conf.WeatherApiAPIKey, conf.WeatherStackAPIKey)
 
 	aggregator := service.NewWeatherRequestAggregator(
 		weatherAPIService,
-		cacheProvider,
 		weatherRepo,
 		conf.MaxQueueSize,
 		conf.MaxWaitTime,
-		conf.CacheTTL,
-		conf.FailedCacheTTL,
 	)
 	weatherService := service.NewWeatherService(aggregator)
 

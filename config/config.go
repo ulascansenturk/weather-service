@@ -24,10 +24,8 @@ type Config struct {
 	WeatherApiAPIKey   string
 	WeatherStackAPIKey string
 
-	MaxQueueSize   int
-	MaxWaitTime    time.Duration
-	CacheTTL       time.Duration
-	FailedCacheTTL time.Duration
+	MaxQueueSize int
+	MaxWaitTime  time.Duration
 }
 
 func LoadConfig() (*Config, error) {
@@ -40,8 +38,6 @@ func LoadConfig() (*Config, error) {
 	v.SetDefault("HTTP_TIMEOUT", 175)
 	v.SetDefault("MAX_QUEUE_SIZE", 10)
 	v.SetDefault("MAX_WAIT_TIME", 5*time.Second)
-	v.SetDefault("CACHE_TTL", 5*time.Minute)
-	v.SetDefault("FAILED_CACHE_TTL", 2*time.Minute)
 
 	v.AutomaticEnv()
 
@@ -74,8 +70,6 @@ func LoadConfig() (*Config, error) {
 		WeatherStackAPIKey: v.GetString("WEATHER_STACK_API_KEY"),
 		MaxQueueSize:       v.GetInt("MAX_QUEUE_SIZE"),
 		MaxWaitTime:        v.GetDuration("MAX_WAIT_TIME"),
-		CacheTTL:           v.GetDuration("CACHE_TTL"),
-		FailedCacheTTL:     v.GetDuration("FAILED_CACHE_TTL"),
 	}
 
 	return config, nil
