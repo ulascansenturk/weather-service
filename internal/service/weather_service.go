@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"time"
 )
 
 type WeatherResponse struct {
@@ -13,12 +12,6 @@ type WeatherResponse struct {
 	Error       string  `json:"error,omitempty"`
 }
 
-type RequestQueue struct {
-	Channels   []chan WeatherResponse
-	Timer      *time.Timer
-	CreatedAt  time.Time
-	InProgress bool
-}
 type WeatherService interface {
 	GetWeather(ctx context.Context, location string) (WeatherResponse, error)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/rs/zerolog/log"
 	"sync"
 	"time"
 	"ulascansenturk/weather-service/internal/db/weatherquery"
@@ -10,15 +11,21 @@ import (
 
 type WeatherRequestAggregator interface {
 	AddRequest(ctx context.Context, location string) (<-chan WeatherResponse, error)
-	ProcessQueue(location string)
+	ProcessQueueForTesting(location string)
 	Shutdown()
+}
+
+type locationQueue struct {
+	channels []chan WeatherResponse
+	timer    *time.Timer
+	mu       sync.Mutex
 }
 
 type weatherAggregator struct {
 	weatherAPI       providers.WeatherAPIService
 	weatherQueryRepo weatherquery.Repository
-	queues           map[string]*RequestQueue
-	queueMutex       sync.Mutex
+	queues           map[string]*locationQueue // init map to sure it is not nil
+	queueMutex       sync.RWMutex              // Use RWMutex to allow concurrent reads
 	maxQueueSize     int
 	maxWaitTime      time.Duration
 }
@@ -32,71 +39,88 @@ func NewWeatherRequestAggregator(
 	return &weatherAggregator{
 		weatherAPI:       weatherAPI,
 		weatherQueryRepo: weatherQueryRepo,
-		queues:           make(map[string]*RequestQueue),
+		queues:           make(map[string]*locationQueue),
 		maxQueueSize:     maxQueueSize,
 		maxWaitTime:      maxWaitTime,
 	}
 }
 
 func (w *weatherAggregator) AddRequest(ctx context.Context, location string) (<-chan WeatherResponse, error) {
+	// init buffer channel with size 1 to avoid blocking
 	responseChan := make(chan WeatherResponse, 1)
-	shouldProcess := false
 
-	w.queueMutex.Lock()
-	defer w.queueMutex.Unlock()
+	w.queueMutex.RLock()
+	queue, exists := w.queues[location]
+	w.queueMutex.RUnlock()
 
-	if _, exists := w.queues[location]; !exists {
-		w.queues[location] = &RequestQueue{
-			Channels:   make([]chan WeatherResponse, 0),
-			CreatedAt:  time.Now(),
-			InProgress: false,
+	//check if queue exist for location
+	if !exists {
+		w.queueMutex.Lock()
+		//double check if queue is created by another goroutine. better safe than sorry
+		queue, exists = w.queues[location]
+		if !exists {
+			queue = &locationQueue{}
+			w.queues[location] = queue
 		}
-
-		w.queues[location].Timer = time.AfterFunc(w.maxWaitTime, func() {
-			w.ProcessQueue(location)
-		})
-		shouldProcess = false
-	} else if w.queues[location].InProgress {
-		w.queues[location].Timer.Stop()
-		w.queues[location] = &RequestQueue{
-			Channels:   make([]chan WeatherResponse, 0),
-			CreatedAt:  time.Now(),
-			InProgress: false,
-		}
-		w.queues[location].Timer = time.AfterFunc(w.maxWaitTime, func() {
-			w.ProcessQueue(location)
-		})
-		shouldProcess = false
+		w.queueMutex.Unlock()
 	}
 
-	w.queues[location].Channels = append(w.queues[location].Channels, responseChan)
+	// lock the specific location queue
+	queue.mu.Lock()
+	defer queue.mu.Unlock()
 
-	if len(w.queues[location].Channels) >= w.maxQueueSize {
-		w.queues[location].Timer.Stop()
-		shouldProcess = true
-		w.queues[location].InProgress = true
+	// if its the first request for the location, start the timer (max 5 seconds)
+	if len(queue.channels) == 0 {
+		queue.timer = time.AfterFunc(w.maxWaitTime, func() {
+			w.processQueue(location)
+		})
 	}
 
-	if shouldProcess {
-		go w.ProcessQueue(location)
+	// add the response chhanel to queue
+	queue.channels = append(queue.channels, responseChan)
+
+	if len(queue.channels) >= w.maxQueueSize {
+		// if we hit the max limit no need to wait for timer, process directly
+		if queue.timer != nil {
+			queue.timer.Stop()
+			queue.timer = nil
+		}
+		go w.processQueue(location)
 	}
 
 	return responseChan, nil
 }
 
-func (w *weatherAggregator) ProcessQueue(location string) {
-	w.queueMutex.Lock()
+func (w *weatherAggregator) processQueue(location string) {
+	var channels []chan WeatherResponse
 
+	w.queueMutex.RLock()
 	queue, exists := w.queues[location]
-	if !exists || len(queue.Channels) == 0 {
-		w.queueMutex.Unlock()
+	w.queueMutex.RUnlock()
+
+	if !exists {
 		return
 	}
 
-	queue.InProgress = true
-	channels := queue.Channels
-	queue.Channels = nil
+	queue.mu.Lock()
 
+	if len(queue.channels) == 0 {
+		queue.mu.Unlock()
+		return
+	}
+
+	channels = queue.channels
+	queue.channels = nil
+
+	if queue.timer != nil {
+		queue.timer.Stop()
+		queue.timer = nil
+	}
+
+	queue.mu.Unlock()
+
+	w.queueMutex.Lock()
+	delete(w.queues, location)
 	w.queueMutex.Unlock()
 
 	service1Temp, service2Temp, api1Success, api2Success, apiErr := w.weatherAPI.GetWeatherData(location)
@@ -126,16 +150,14 @@ func (w *weatherAggregator) ProcessQueue(location string) {
 			close(ch)
 		}
 
-		w.queueMutex.Lock()
-		delete(w.queues, location)
-		w.queueMutex.Unlock()
-
 		return
 	}
 
 	go func() {
 		if w.weatherQueryRepo != nil {
-			_ = w.weatherQueryRepo.LogWeatherQuery(location, service1Temp, service2Temp, len(channels))
+			if err := w.weatherQueryRepo.LogWeatherQuery(location, service1Temp, service2Temp, len(channels)); err != nil {
+				log.Log().Err(err).Msg("Failed to log weather query")
+			}
 		}
 	}()
 
@@ -147,10 +169,6 @@ func (w *weatherAggregator) ProcessQueue(location string) {
 		}
 		close(ch)
 	}
-
-	w.queueMutex.Lock()
-	delete(w.queues, location)
-	w.queueMutex.Unlock()
 }
 
 func (w *weatherAggregator) Shutdown() {
@@ -158,14 +176,22 @@ func (w *weatherAggregator) Shutdown() {
 	defer w.queueMutex.Unlock()
 
 	for _, queue := range w.queues {
-		if queue.Timer != nil {
-			queue.Timer.Stop()
+		queue.mu.Lock()
+
+		if queue.timer != nil {
+			queue.timer.Stop()
 		}
 
-		for _, ch := range queue.Channels {
+		for _, ch := range queue.channels {
 			close(ch)
 		}
+
+		queue.mu.Unlock()
 	}
 
-	w.queues = make(map[string]*RequestQueue)
+	w.queues = make(map[string]*locationQueue)
+}
+
+func (w *weatherAggregator) ProcessQueueForTesting(location string) {
+	w.processQueue(location)
 }

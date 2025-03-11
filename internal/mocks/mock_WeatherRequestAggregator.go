@@ -44,8 +44,8 @@ func (_m *MockWeatherRequestAggregator) AddRequest(ctx context.Context, location
 	return r0, r1
 }
 
-// ProcessQueue provides a mock function with given fields: location
-func (_m *MockWeatherRequestAggregator) ProcessQueue(location string) {
+// ProcessQueueForTesting provides a mock function with given fields: location
+func (_m *MockWeatherRequestAggregator) ProcessQueueForTesting(location string) {
 	_m.Called(location)
 }
 
