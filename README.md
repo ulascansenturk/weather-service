@@ -8,6 +8,8 @@ A high-performance weather query application that provides average temperature d
 
 - Docker and Docker Compose
 - Go 1.18 or higher (for local development)
+- WeatherStack API key (free tier is sufficient)
+- WeatherAPI API key (free tier is sufficient)
 
 ### Environment Setup
 
