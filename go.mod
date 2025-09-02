@@ -1,11 +1,12 @@
 module ulascansenturk/weather-service
 
 go 1.22.5
+
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/viper v1.20.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go v0.35.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.35.0
 	gorm.io/driver/postgres v1.5.11
